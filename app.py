@@ -152,9 +152,10 @@ def analyze_image_with_gemini(uploaded_file):
     """
 
     gemini_models = [
-        "gemini-1.5-flash", 
-        "gemini-2.0-flash", 
-        "gemini-1.5-flash-8b"
+        "gemini-3-flash-preview", 
+        "gemini-2.5-flash", 
+        "gemini-3.1-flash-lite-preview"
+        "gemini-3.1-flash-live-preview"
     ]
 
     with st.spinner("AI가 이미지를 분석 중입니다..."):
