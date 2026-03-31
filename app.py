@@ -172,7 +172,7 @@ def analyze_image_with_gemini(uploaded_file):
 # -----------------------------------------------------------------------------
 # 3. Streamlit 앱 UI 구성
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="청년 에코 대시보드", page_icon="🌱", layout="wide")
+st.set_page_config(page_title="청년 기획 봉사단", page_icon="🌱", layout="wide")
 
 st.markdown("""
     <style>
@@ -181,8 +181,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🌱 서울 청년 기획 봉사단: 에코 대시보드")
-st.markdown("클라우드 AI와 함께 우리 동네 에너지를 지키고 탄소 배출을 줄여보세요!")
+st.title("🌱 서울 청년 기획 봉사단")
+st.markdown("에너지를 지키보세요!")
 
 with st.sidebar:
     st.header("사용자 로그인")
