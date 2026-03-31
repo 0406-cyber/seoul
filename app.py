@@ -100,12 +100,12 @@ def call_text_api_with_fallback(prompt, models):
 
 def get_gemma_advice(elec, gas, co2):
     prompt = f"사용자가 이번 달에 전기 {elec}kWh, 가스 {gas}m3를 사용하여 총 {co2:.2f}kg의 탄소를 배출했어. 이 사용자에게 에너지 절약을 독려하고 실생활에서 실천할 수 있는 팁을 친절하게 한국어 3문장 이내로 조언해줘."
-    gemma_models = ["gemma-3-27b", "gemma-3-12b", "gemma-3-4b", "gemma-3-2b", "gemma-3-1b"]
+    gemma_models = ["gemma-3-27b-it", "gemma-3-12b-it", "gemma-3-4b-it", "gemma-3-1b-it"]
     return call_text_api_with_fallback(prompt, gemma_models)
 
 
 def ask_gemma_custom_question(user_message):
-    gemma_models = ["gemma-3-27b", "gemma-3-12b", "gemma-3-4b", "gemma-3-2b", "gemma-3-1b"]
+    gemma_models = ["gemma-3-27b-it", "gemma-3-12b-it", "gemma-3-4b-it", "gemma-3-1b-it"]
     return call_text_api_with_fallback(user_message, gemma_models)
 
 
@@ -131,7 +131,7 @@ def analyze_image_with_gemini(uploaded_file):
     }
     """
 
-    gemini_models = ["gemini-3-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-live"]
+    gemini_models = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-3-flash-live-preview"]
 
     with st.spinner("AI가 이미지를 분석 중입니다... (시간이 다소 소요될 수 있습니다)"):
         for model in gemini_models:
