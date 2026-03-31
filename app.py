@@ -7,6 +7,7 @@ import base64
 import json
 from io import BytesIO
 from streamlit_gsheets import GSheetsConnection
+import traceback
 
 # -----------------------------------------------------------------------------
 # [중요] Google Gemini / Gemma API 설정
@@ -77,6 +78,24 @@ def get_usage_data(username):
     user_usage = usage_df[usage_df['username'] == username].sort_values(by="date")
     return user_usage
 
+def log_error(error_message, current_user="unknown"):
+    """발생한 에러를 구글 시트 logs 탭에 기록합니다."""
+    conn = get_connection()
+    try:
+        logs_df = conn.read(worksheet="logs", ttl=0).dropna(how="all")
+    except Exception:
+        # 처음 생성되어 비어있거나 읽기 실패 시 빈 데이터프레임 생성
+        logs_df = pd.DataFrame(columns=["timestamp", "username", "error_message"])
+        
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_log = pd.DataFrame([{
+        "timestamp": now,
+        "username": current_user,
+        "error_message": str(error_message)
+    }])
+    
+    logs_df = pd.concat([logs_df, new_log], ignore_index=True)
+    conn.update(worksheet="logs", data=logs_df)
 
 # -----------------------------------------------------------------------------
 # 2. 외부 API 연동 함수들 (이전 코드와 동일)
@@ -110,15 +129,16 @@ def ask_gemma_custom_question(user_message):
 
 
 def analyze_image_with_gemini(uploaded_file):
+    # 1. 이미지 준비 과정
     try:
         image_bytes = uploaded_file.getvalue()
         encoded_image = base64.b64encode(image_bytes).decode('utf-8')
-        mime_type = "image/jpeg"
-        if uploaded_file.name.lower().endswith(".png"):
-            mime_type = "image/png"
+        # Streamlit이 제공하는 mime type을 우선 사용하고, 없으면 확장자로 판단
+        mime_type = uploaded_file.type if uploaded_file.type else "image/jpeg"
     except Exception as e:
         return None, f"이미지 처리 중 오류 발생: {e}"
 
+    # 2. 프롬프트 설정
     prompt = """
     이 이미지를 분석해서 사용자가 '어떤 에너지 절약 행동'을 하고 있는지 파악해줘.
     그리고 그 행동으로 인해 대략 몇 kWh의 전기를 절약했을지 추정해줘. (예: 전등 끄기 1시간 = 0.05kWh 소모 가정)
@@ -131,9 +151,15 @@ def analyze_image_with_gemini(uploaded_file):
     }
     """
 
-    gemini_models = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-3-flash-live-preview"]
+    # 모델 리스트 (현재 사용 가능한 정확한 ID로 확인 필요)
+    gemini_models = [
+        "gemini-1.5-flash", 
+        "gemini-2.0-flash", 
+        "gemini-1.5-flash-8b"
+    ]
 
-    with st.spinner("AI가 이미지를 분석 중입니다... (시간이 다소 소요될 수 있습니다)"):
+    # 3. 모델 순차 호출 (Fallback)
+    with st.spinner("AI가 이미지를 분석 중입니다..."):
         for model in gemini_models:
             url = f"{API_BASE_URL}/{model}:generateContent?key={API_KEY}"
             payload = {
@@ -153,20 +179,37 @@ def analyze_image_with_gemini(uploaded_file):
             }
 
             try:
-                response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
+                response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=30)
                 response.raise_for_status()
 
                 result_data = response.json()
                 if "candidates" in result_data and len(result_data["candidates"]) > 0:
                     result_text = result_data["candidates"][0]["content"]["parts"][0]["text"]
-                    result_text = result_text.strip().removeprefix('```json').removesuffix('```').strip()
-                    result_json = json.loads(result_text)
+                    
+                    # 마크다운 코드 블록 제거를 위한 유연한 처리
+                    if "```json" in result_text:
+                        result_text = result_text.split("```json")[1].split("```")[0]
+                    elif "```" in result_text:
+                        result_text = result_text.split("```")[1].split("```")[0]
+                    
+                    result_json = json.loads(result_text.strip())
                     return result_json, None
 
-            except (requests.exceptions.RequestException, json.JSONDecodeError):
-                continue
+            except (requests.exceptions.RequestException, json.JSONDecodeError, IndexError):
+                # 에러 로그 기록
+                error_detail = traceback.format_exc() 
+                current_user = st.session_state.get('username', 'unknown')
+                log_error(error_detail, current_user)
+                # 다음 모델로 시도
+                continue 
+            except Exception as e:
+                # 예상치 못한 치명적 오류
+                error_detail = traceback.format_exc()
+                current_user = st.session_state.get('username', 'unknown')
+                log_error(error_detail, current_user)
+                return None, "이미지 처리 중 치명적인 오류가 발생했습니다."
 
-    return None, "⚠️ 모든 이미지 AI 모델 호출에 실패했습니다. API 연결 상태를 확인하세요."
+    return None, "⚠️ 모든 AI 모델 호출에 실패했습니다. 관리자 페이지에서 로그를 확인하세요."
 
 
 # -----------------------------------------------------------------------------
@@ -217,6 +260,20 @@ if 'username' in st.session_state:
                 st.session_state['admin_authenticated'] = False
                 st.session_state.pop('username', None)
                 st.rerun()
+
+            st.divider()
+            st.markdown("### 🚨 시스템 시스템 오류 로그 (최근 순)")
+            
+            try:
+                logs_df = conn.read(worksheet="logs", ttl=0).dropna(how="all")
+                if not logs_df.empty:
+                    # 최신 에러가 위로 오도록 시간 역순으로 정렬
+                    logs_df = logs_df.sort_values(by="timestamp", ascending=False)
+                    st.dataframe(logs_df, use_container_width=True)
+                else:
+                    st.info("기록된 오류가 없습니다. 아주 평화롭네요!")
+            except Exception as e:
+                st.error("로그 데이터를 불러올 수 없습니다. 구글 시트에 'logs' 탭이 있는지 확인해 주세요.")
 
             conn = get_connection()
             users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
