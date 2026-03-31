@@ -8,6 +8,7 @@ import json
 from io import BytesIO
 from streamlit_gsheets import GSheetsConnection
 import traceback
+import re
 
 # -----------------------------------------------------------------------------
 # [중요] Google Gemini / Gemma API 설정
@@ -17,26 +18,44 @@ API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 # -----------------------------------------------------------------------------
-# 1. 데이터베이스 설정 (Google Sheets 연동)
+# 1. 데이터베이스 설정 및 로그 함수
 # -----------------------------------------------------------------------------
-# 주의: 구글 시트에 'users'와 'usage'라는 이름의 워크시트가 미리 생성되어 있어야 하며,
-# 각각의 1행에 헤더가 입력되어 있어야 합니다.
-
 def get_connection():
     return st.connection("gsheets", type=GSheetsConnection)
 
 
+def log_error(error_message, current_user="unknown"):
+    """발생한 에러를 구글 시트 logs 탭에 기록합니다."""
+    try:
+        conn = get_connection()
+        try:
+            logs_df = conn.read(worksheet="logs", ttl=0).dropna(how="all")
+        except Exception:
+            # 처음 생성되어 비어있거나 읽기 실패 시 빈 데이터프레임 생성
+            logs_df = pd.DataFrame(columns=["timestamp", "username", "error_message"])
+            
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_log = pd.DataFrame([{
+            "timestamp": now,
+            "username": current_user,
+            "error_message": str(error_message)
+        }])
+        
+        updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
+        conn.update(worksheet="logs", data=updated_logs)
+    except Exception as e:
+        # 로그 기록 자체가 실패할 경우 사이드바에 에러 표시
+        st.sidebar.error(f"로그 기록 실패: {e}")
+
+
 def login_user(username):
     conn = get_connection()
-    # ttl=0을 주어 캐시된 데이터가 아닌 실시간 데이터를 불러옴
     users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
 
     if username not in users_df['username'].values:
-        # 신규 사용자 추가
         new_user = pd.DataFrame([{"username": username, "login_count": 1, "total_points": 0}])
         users_df = pd.concat([users_df, new_user], ignore_index=True)
     else:
-        # 기존 사용자 접속 횟수 증가
         users_df.loc[users_df['username'] == username, 'login_count'] += 1
 
     conn.update(worksheet="users", data=users_df)
@@ -45,8 +64,6 @@ def login_user(username):
 def update_user_points(username, points):
     conn = get_connection()
     users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
-
-    # 포인트 누적
     users_df.loc[users_df['username'] == username, 'total_points'] += points
     conn.update(worksheet="users", data=users_df)
 
@@ -78,40 +95,26 @@ def get_usage_data(username):
     user_usage = usage_df[usage_df['username'] == username].sort_values(by="date")
     return user_usage
 
-def log_error(error_message, current_user="unknown"):
-    """발생한 에러를 구글 시트 logs 탭에 기록합니다."""
-    conn = get_connection()
-    try:
-        logs_df = conn.read(worksheet="logs", ttl=0).dropna(how="all")
-    except Exception:
-        # 처음 생성되어 비어있거나 읽기 실패 시 빈 데이터프레임 생성
-        logs_df = pd.DataFrame(columns=["timestamp", "username", "error_message"])
-        
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_log = pd.DataFrame([{
-        "timestamp": now,
-        "username": current_user,
-        "error_message": str(error_message)
-    }])
-    
-    logs_df = pd.concat([logs_df, new_log], ignore_index=True)
-    conn.update(worksheet="logs", data=logs_df)
 
 # -----------------------------------------------------------------------------
-# 2. 외부 API 연동 함수들 (이전 코드와 동일)
+# 2. 외부 API 연동 함수들 (Gemma & Gemini)
 # -----------------------------------------------------------------------------
 def call_text_api_with_fallback(prompt, models):
     for model in models:
         url = f"{API_BASE_URL}/{model}:generateContent?key={API_KEY}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         try:
-            response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
+            response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
+            # 429 한도 초과 시 다음 모델로 바로 넘어감
+            if response.status_code == 429:
+                continue
+                
             response.raise_for_status()
-
             result = response.json()
             if "candidates" in result and len(result["candidates"]) > 0:
                 return result["candidates"][0]["content"]["parts"][0]["text"]
-        except requests.exceptions.RequestException:
+        except Exception as e:
+            log_error(traceback.format_exc(), st.session_state.get('username', 'system'))
             continue
 
     return "⚠️ 모든 텍스트 AI 모델 호출에 실패했습니다. API 키나 한도를 확인하세요."
@@ -129,16 +132,13 @@ def ask_gemma_custom_question(user_message):
 
 
 def analyze_image_with_gemini(uploaded_file):
-    # 1. 이미지 준비 과정
     try:
         image_bytes = uploaded_file.getvalue()
         encoded_image = base64.b64encode(image_bytes).decode('utf-8')
-        # Streamlit이 제공하는 mime type을 우선 사용하고, 없으면 확장자로 판단
         mime_type = uploaded_file.type if uploaded_file.type else "image/jpeg"
     except Exception as e:
         return None, f"이미지 처리 중 오류 발생: {e}"
 
-    # 2. 프롬프트 설정
     prompt = """
     이 이미지를 분석해서 사용자가 '어떤 에너지 절약 행동'을 하고 있는지 파악해줘.
     그리고 그 행동으로 인해 대략 몇 kWh의 전기를 절약했을지 추정해줘. (예: 전등 끄기 1시간 = 0.05kWh 소모 가정)
@@ -151,14 +151,12 @@ def analyze_image_with_gemini(uploaded_file):
     }
     """
 
-    # 모델 리스트 (현재 사용 가능한 정확한 ID로 확인 필요)
     gemini_models = [
         "gemini-1.5-flash", 
         "gemini-2.0-flash", 
         "gemini-1.5-flash-8b"
     ]
 
-    # 3. 모델 순차 호출 (Fallback)
     with st.spinner("AI가 이미지를 분석 중입니다..."):
         for model in gemini_models:
             url = f"{API_BASE_URL}/{model}:generateContent?key={API_KEY}"
@@ -180,34 +178,36 @@ def analyze_image_with_gemini(uploaded_file):
 
             try:
                 response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=30)
+                if response.status_code == 429:
+                    continue
+                    
                 response.raise_for_status()
 
                 result_data = response.json()
                 if "candidates" in result_data and len(result_data["candidates"]) > 0:
                     result_text = result_data["candidates"][0]["content"]["parts"][0]["text"]
                     
-                    # 마크다운 코드 블록 제거를 위한 유연한 처리
-                    if "```json" in result_text:
-                        result_text = result_text.split("```json")[1].split("```")[0]
-                    elif "```" in result_text:
-                        result_text = result_text.split("```")[1].split("```")[0]
+                    # 정규식을 이용해 응답 텍스트 내에서 JSON 형태만 안전하게 추출
+                    json_match = re.search(r'\{.*\}', result_text.replace('\n', ''), re.DOTALL)
                     
-                    result_json = json.loads(result_text.strip())
-                    return result_json, None
+                    if json_match:
+                        result_json = json.loads(json_match.group())
+                        return result_json, None
+                    else:
+                        # 정규식 추출 실패 시 기존 방식(마크다운 제거)으로 폴백 시도
+                        if "```json" in result_text:
+                            result_text = result_text.split("```json")[1].split("```")[0]
+                        elif "```" in result_text:
+                            result_text = result_text.split("```")[1].split("```")[0]
+                        
+                        result_json = json.loads(result_text.strip())
+                        return result_json, None
 
-            except (requests.exceptions.RequestException, json.JSONDecodeError, IndexError):
-                # 에러 로그 기록
+            except Exception as e:
                 error_detail = traceback.format_exc() 
                 current_user = st.session_state.get('username', 'unknown')
                 log_error(error_detail, current_user)
-                # 다음 모델로 시도
                 continue 
-            except Exception as e:
-                # 예상치 못한 치명적 오류
-                error_detail = traceback.format_exc()
-                current_user = st.session_state.get('username', 'unknown')
-                log_error(error_detail, current_user)
-                return None, "이미지 처리 중 치명적인 오류가 발생했습니다."
 
     return None, "⚠️ 모든 AI 모델 호출에 실패했습니다. 관리자 페이지에서 로그를 확인하세요."
 
@@ -225,7 +225,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("🌱 서울 청년 기획 봉사단")
-st.markdown("에너지를 지키보세요!")
+st.markdown("에너지를 지켜보세요!")
 
 with st.sidebar:
     st.header("사용자 로그인")
@@ -241,10 +241,19 @@ with st.sidebar:
 if 'username' in st.session_state:
     user = st.session_state['username']
 
-if user == 'admin':
+    if user == 'admin':
         if not st.session_state.get('admin_authenticated', False):
-            # ... (인증 로직 동일) ...
-            pass
+            st.subheader("🔒 관리자 권한 인증")
+            st.info("관리자 대시보드에 접근하려면 비밀번호가 필요합니다.")
+            admin_pw = st.text_input("관리자 비밀번호를 입력하세요", type="password")
+
+            if st.button("인증하기"):
+                if admin_pw == "seoul1234":
+                    st.session_state['admin_authenticated'] = True
+                    st.success("인증 성공! 대시보드를 불러옵니다...")
+                    st.rerun()
+                else:
+                    st.error("비밀번호가 일치하지 않습니다.")
         else:
             st.subheader("🛠️ 관리자(Admin) 전용 데이터 통합 조회 대시보드")
             if st.button("🔒 관리자 모드 로그아웃"):
@@ -252,27 +261,23 @@ if user == 'admin':
                 st.session_state.pop('username', None)
                 st.rerun()
 
-            # [수정] conn을 먼저 선언해야 합니다!
+            # conn 변수를 에러 없이 사용하기 위해 상단에서 먼저 호출
             conn = get_connection()
 
             st.divider()
             st.markdown("### 🚨 시스템 오류 로그 (최근 순)")
             
             try:
-                # [수정] logs 시트를 읽어옵니다.
                 logs_df = conn.read(worksheet="logs", ttl=0).dropna(how="all")
                 if not logs_df.empty:
-                    # timestamp 컬럼이 있는지 확인 후 정렬
                     if "timestamp" in logs_df.columns:
                         logs_df = logs_df.sort_values(by="timestamp", ascending=False)
                     st.dataframe(logs_df, use_container_width=True)
                 else:
                     st.info("기록된 오류가 없습니다. 아주 평화롭네요!")
             except Exception as e:
-                # 시트가 없거나 읽기 오류 시 출력
                 st.error(f"로그 데이터를 불러올 수 없습니다. 구글 시트에 'logs' 탭이 있는지 확인해 주세요. (에러: {e})")
 
-            # 하단 통계 부분 (이미 위에서 conn을 선언했으므로 바로 사용 가능)
             users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
             usage_df = conn.read(worksheet="usage", ttl=0).dropna(how="all")
 
@@ -373,8 +378,6 @@ if user == 'admin':
                             description = result_json.get("description", "에너지 절약 행동")
                             raw_kwh = result_json.get("estimated_save_kwh", "0")
 
-                            import re
-
                             match = re.search(r'[\d\.]+', str(raw_kwh))
                             saved_kwh = float(match.group(0)) if match else 0.0
 
@@ -396,19 +399,15 @@ if user == 'admin':
             users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
 
             if not users_df.empty:
-                # 데이터 정렬: 누적 포인트 내림차순, 접속 횟수 내림차순
-                # 구글 시트에서 문자로 읽어왔을 수 있으므로 숫자로 형변환
                 users_df['total_points'] = pd.to_numeric(users_df['total_points'], errors='coerce').fillna(0)
                 users_df['login_count'] = pd.to_numeric(users_df['login_count'], errors='coerce').fillna(0)
 
                 leaderboard_df = users_df.sort_values(by=['total_points', 'login_count'],
                                                       ascending=[False, False]).head(10)
 
-                # 인덱스를 순위로 표시
                 leaderboard_df = leaderboard_df.reset_index(drop=True)
                 leaderboard_df.index = leaderboard_df.index + 1
 
-                # 보여줄 컬럼 한글화 및 선택
                 display_df = leaderboard_df[['username', 'login_count', 'total_points']].rename(
                     columns={'username': '닉네임', 'login_count': '접속 횟수', 'total_points': '누적 포인트'}
                 )
