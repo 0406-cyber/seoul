@@ -16,13 +16,11 @@ import re
 API_KEY = st.secrets["GEMINI_API_KEY"]
 API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-
 # -----------------------------------------------------------------------------
 # 1. 데이터베이스 설정 및 로그 함수
 # -----------------------------------------------------------------------------
 def get_connection():
     return st.connection("gsheets", type=GSheetsConnection)
-
 
 def log_error(error_message, current_user="unknown"):
     """발생한 에러를 구글 시트 logs 탭에 기록합니다."""
@@ -31,7 +29,6 @@ def log_error(error_message, current_user="unknown"):
         try:
             logs_df = conn.read(worksheet="logs", ttl=0).dropna(how="all")
         except Exception:
-            # 처음 생성되어 비어있거나 읽기 실패 시 빈 데이터프레임 생성
             logs_df = pd.DataFrame(columns=["timestamp", "username", "error_message"])
             
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -44,9 +41,7 @@ def log_error(error_message, current_user="unknown"):
         updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
         conn.update(worksheet="logs", data=updated_logs)
     except Exception as e:
-        # 로그 기록 자체가 실패할 경우 사이드바에 에러 표시
         st.sidebar.error(f"로그 기록 실패: {e}")
-
 
 def login_user(username):
     conn = get_connection()
@@ -60,13 +55,11 @@ def login_user(username):
 
     conn.update(worksheet="users", data=users_df)
 
-
 def update_user_points(username, points):
     conn = get_connection()
     users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
     users_df.loc[users_df['username'] == username, 'total_points'] += points
     conn.update(worksheet="users", data=users_df)
-
 
 def save_usage(username, elec, gas, co2):
     conn = get_connection()
@@ -83,7 +76,6 @@ def save_usage(username, elec, gas, co2):
 
     usage_df = pd.concat([usage_df, new_data], ignore_index=True)
     conn.update(worksheet="usage", data=usage_df)
-
 
 def get_usage_data(username):
     conn = get_connection()
@@ -105,7 +97,6 @@ def call_text_api_with_fallback(prompt, models):
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         try:
             response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
-            # 429 한도 초과 시 다음 모델로 바로 넘어감
             if response.status_code == 429:
                 continue
                 
@@ -119,17 +110,14 @@ def call_text_api_with_fallback(prompt, models):
 
     return "⚠️ 모든 텍스트 AI 모델 호출에 실패했습니다. API 키나 한도를 확인하세요."
 
-
 def get_gemma_advice(elec, gas, co2):
     prompt = f"사용자가 이번 달에 전기 {elec}kWh, 가스 {gas}m3를 사용하여 총 {co2:.2f}kg의 탄소를 배출했어. 이 사용자에게 에너지 절약을 독려하고 실생활에서 실천할 수 있는 팁을 친절하게 한국어 3문장 이내로 조언해줘."
     gemma_models = ["gemma-3-27b-it", "gemma-3-12b-it", "gemma-3-4b-it", "gemma-3-1b-it"]
     return call_text_api_with_fallback(prompt, gemma_models)
 
-
 def ask_gemma_custom_question(user_message):
     gemma_models = ["gemma-3-27b-it", "gemma-3-12b-it", "gemma-3-4b-it", "gemma-3-1b-it"]
     return call_text_api_with_fallback(user_message, gemma_models)
-
 
 def analyze_image_with_gemini(uploaded_file):
     try:
@@ -154,7 +142,7 @@ def analyze_image_with_gemini(uploaded_file):
     gemini_models = [
         "gemini-3-flash-preview", 
         "gemini-2.5-flash", 
-        "gemini-3.1-flash-lite-preview"
+        "gemini-3.1-flash-lite-preview",
         "gemini-3.1-flash-live-preview"
     ]
 
@@ -188,14 +176,12 @@ def analyze_image_with_gemini(uploaded_file):
                 if "candidates" in result_data and len(result_data["candidates"]) > 0:
                     result_text = result_data["candidates"][0]["content"]["parts"][0]["text"]
                     
-                    # 정규식을 이용해 응답 텍스트 내에서 JSON 형태만 안전하게 추출
                     json_match = re.search(r'\{.*\}', result_text.replace('\n', ''), re.DOTALL)
                     
                     if json_match:
                         result_json = json.loads(json_match.group())
                         return result_json, None
                     else:
-                        # 정규식 추출 실패 시 기존 방식(마크다운 제거)으로 폴백 시도
                         if "```json" in result_text:
                             result_text = result_text.split("```json")[1].split("```")[0]
                         elif "```" in result_text:
@@ -218,10 +204,108 @@ def analyze_image_with_gemini(uploaded_file):
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="청년 기획 봉사단", page_icon="🌱", layout="wide")
 
+# 애플 감성 커스텀 CSS 주입
 st.markdown("""
     <style>
-    .big-font { font-size:20px !important; font-weight: bold; }
-    .stMetric { background-color: #f0f8ff; padding: 10px; border-radius: 10px; }
+    /* Pretendard 폰트 (애플 산돌고딕 유사) 적용 */
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    
+    html, body, [class*="css"] {
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+        color: #1d1d1f;
+    }
+
+    /* 전체 배경색: 애플 특유의 아주 연한 회색 */
+    .stApp {
+        background-color: #fbfbfd;
+    }
+
+    /* 사이드바 스타일링 */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #d2d2d7;
+    }
+
+    /* Metric (숫자 위젯) 카드 스타일링 */
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border-radius: 18px;
+        padding: 20px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+        border: 1px solid #e5e5ea;
+        transition: transform 0.2s ease;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Metric 레이블 색상 (조금 더 연하게) */
+    div[data-testid="stMetricLabel"] {
+        color: #86868b;
+        font-weight: 500;
+    }
+    /* Metric 수치 색상 (진하게) */
+    div[data-testid="stMetricValue"] {
+        color: #1d1d1f;
+        font-weight: 700;
+    }
+
+    /* 버튼 디자인: iOS 블루 스타일 */
+    .stButton>button {
+        background-color: #0071e3;
+        color: #ffffff;
+        border-radius: 12px;
+        border: none;
+        padding: 10px 24px;
+        font-weight: 600;
+        box-shadow: 0 4px 12px rgba(0, 113, 227, 0.2);
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        background-color: #0077ed;
+        color: #ffffff;
+        box-shadow: 0 6px 16px rgba(0, 113, 227, 0.3);
+        transform: scale(1.02);
+    }
+
+    /* Form 컨테이너 디자인 */
+    div[data-testid="stForm"] {
+        background-color: #ffffff;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        border: 1px solid #e5e5ea;
+    }
+
+    /* Expander (아코디언) 디자인 */
+    div[data-testid="stExpander"] {
+        background-color: #ffffff;
+        border-radius: 16px;
+        border: 1px solid #e5e5ea;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+    }
+
+    /* 탭 디자인 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+        border-bottom: 1px solid #d2d2d7;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding: 12px 16px;
+        font-weight: 600;
+        color: #86868b;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #0071e3 !important;
+        border-bottom: 2px solid #0071e3 !important;
+    }
+    
+    /* 제목 텍스트 색상 조절 */
+    h1, h2, h3, h4, h5, h6 {
+        color: #1d1d1f;
+        font-weight: 700 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -262,7 +346,6 @@ if 'username' in st.session_state:
                 st.session_state.pop('username', None)
                 st.rerun()
 
-            # conn 변수를 에러 없이 사용하기 위해 상단에서 먼저 호출
             conn = get_connection()
 
             st.divider()
@@ -324,6 +407,8 @@ if 'username' in st.session_state:
             df = get_usage_data(user)
             if not df.empty and len(df) > 0:
                 fig = px.area(df, x='date', y='co2_kg', markers=True, title="일자별 탄소 배출량 변화")
+                # 차트 배경 투명화로 모던함 강조
+                fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)') 
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("아직 기록된 데이터가 없습니다. 사용량을 입력해 주세요.")
