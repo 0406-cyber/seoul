@@ -23,6 +23,7 @@ def get_connection():
     return st.connection("gsheets", type=GSheetsConnection)
 
 def log_error(error_message, current_user="unknown"):
+    """발생한 에러를 구글 시트 logs 탭에 기록합니다."""
     try:
         conn = get_connection()
         try:
@@ -203,113 +204,117 @@ def analyze_image_with_gemini(uploaded_file):
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="청년 기획 봉사단", page_icon="🌱", layout="wide")
 
-# 모바일 앱 감성 커스텀 CSS 주입 (다크 & 둥글둥글)
+# 애플 감성 커스텀 CSS 주입
 st.markdown("""
     <style>
-    /* Pretendard 폰트 적용 */
+    /* Pretendard 폰트 (애플 산돌고딕 유사) 적용 */
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     
     html, body, [class*="css"] {
         font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-        background-color: #121212 !important; /* 완벽한 블랙 배경 */
-        color: #e0e0e0 !important;
+        color: #1d1d1f;
     }
 
-    /* 앱 전체 배경색 덮어쓰기 */
+    /* 전체 배경색: 애플 특유의 아주 연한 회색 */
     .stApp {
-        background-color: #121212 !important;
+        background-color: #fbfbfd;
     }
 
-    /* 상단 헤더 투명화 */
-    header {
-        background-color: transparent !important;
+    /* 사이드바 스타일링 */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #d2d2d7;
     }
 
-    /* 모서리가 매우 둥근 다크 그레이 카드 디자인 (Metric, Form, Expander) */
-    div[data-testid="metric-container"], 
-    div[data-testid="stForm"], 
-    div[data-testid="stExpander"] {
-        background-color: #1e1e1e !important;
-        border-radius: 24px !important;
-        padding: 24px;
-        border: 1px solid #2c2c2e !important;
-        box-shadow: none !important;
+    /* Metric (숫자 위젯) 카드 스타일링 */
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border-radius: 18px;
+        padding: 20px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+        border: 1px solid #e5e5ea;
+        transition: transform 0.2s ease;
     }
-
-    /* Metric 내부 글씨 색상 */
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Metric 레이블 색상 (조금 더 연하게) */
     div[data-testid="stMetricLabel"] {
-        color: #98989d !important;
+        color: #86868b;
         font-weight: 500;
-        font-size: 14px;
     }
+    /* Metric 수치 색상 (진하게) */
     div[data-testid="stMetricValue"] {
-        color: #ffffff !important;
+        color: #1d1d1f;
         font-weight: 700;
     }
 
-    /* 탭(Tab)을 사진처럼 동글동글한 알약(Pill) 형태로 변경 */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-        border-bottom: none !important;
-        padding-bottom: 10px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #1e1e1e !important;
-        border-radius: 50px !important; /* 알약 모양 */
-        padding: 12px 20px !important;
-        font-weight: 600 !important;
-        color: #98989d !important;
-        border: 1px solid #2c2c2e !important;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #ffffff !important; /* 선택된 탭은 흰색 */
-        color: #121212 !important; /* 글씨는 검정색 */
-        border: none !important;
-    }
-    
-    /* 버튼 디자인 (알약 형태) */
+    /* 버튼 디자인: iOS 블루 스타일 */
     .stButton>button {
-        background-color: #2c2c2e;
+        background-color: #0071e3;
         color: #ffffff;
-        border-radius: 50px;
+        border-radius: 12px;
         border: none;
-        padding: 12px 24px;
+        padding: 10px 24px;
         font-weight: 600;
-        transition: all 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0, 113, 227, 0.2);
+        transition: all 0.3s ease;
     }
     .stButton>button:hover {
-        background-color: #3a3a3c;
+        background-color: #0077ed;
         color: #ffffff;
+        box-shadow: 0 6px 16px rgba(0, 113, 227, 0.3);
+        transform: scale(1.02);
     }
 
-    /* 입력창 디자인 */
-    .stTextInput>div>div>input, .stNumberInput>div>div>input {
-        background-color: #1e1e1e !important;
-        color: white !important;
-        border-radius: 16px !important;
-        border: 1px solid #3a3a3c !important;
+    /* Form 컨테이너 디자인 */
+    div[data-testid="stForm"] {
+        background-color: #ffffff;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        border: 1px solid #e5e5ea;
     }
 
-    /* 텍스트 색상 조절 */
-    h1, h2, h3, h4, h5, h6 {
-        color: #ffffff !important;
-        font-weight: 700 !important;
+    /* Expander (아코디언) 디자인 */
+    div[data-testid="stExpander"] {
+        background-color: #ffffff;
+        border-radius: 16px;
+        border: 1px solid #e5e5ea;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+    }
+
+    /* 탭 디자인 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+        border-bottom: 1px solid #d2d2d7;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding: 12px 16px;
+        font-weight: 600;
+        color: #86868b;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #0071e3 !important;
+        border-bottom: 2px solid #0071e3 !important;
     }
     
-    /* 사이드바 배경 및 텍스트 */
-    [data-testid="stSidebar"] {
-        background-color: #1a1a1c !important;
-        border-right: 1px solid #2c2c2e !important;
+    /* 제목 텍스트 색상 조절 */
+    h1, h2, h3, h4, h5, h6 {
+        color: #1d1d1f;
+        font-weight: 700 !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🌱 교내 에코 셔틀")
-st.markdown("나의 에너지 절약 기록 및 AI 분석")
+st.title("🌱 서울 청년 기획 봉사단")
+st.markdown("에너지를 지켜보세요!")
 
 with st.sidebar:
     st.header("사용자 로그인")
-    username_input = st.text_input("닉네임을 입력하세요", placeholder="예: 무악학사생")
+    username_input = st.text_input("닉네임을 입력하세요", placeholder="예: 한강지킴이")
     if st.button("접속/회원가입"):
         if username_input:
             st.session_state['username'] = username_input
@@ -342,6 +347,7 @@ if 'username' in st.session_state:
                 st.rerun()
 
             conn = get_connection()
+
             st.divider()
             st.markdown("### 🚨 시스템 오류 로그 (최근 순)")
             
@@ -354,7 +360,7 @@ if 'username' in st.session_state:
                 else:
                     st.info("기록된 오류가 없습니다. 아주 평화롭네요!")
             except Exception as e:
-                st.error(f"로그 데이터를 불러올 수 없습니다. (에러: {e})")
+                st.error(f"로그 데이터를 불러올 수 없습니다. 구글 시트에 'logs' 탭이 있는지 확인해 주세요. (에러: {e})")
 
             users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
             usage_df = conn.read(worksheet="usage", ttl=0).dropna(how="all")
@@ -369,60 +375,60 @@ if 'username' in st.session_state:
             col_a2.metric("전체 누적 포인트", f"{total_points} P")
             col_a3.metric("총 기록된 데이터 수", f"{len(usage_df)} 건")
 
+            st.divider()
+            st.markdown("### 👥 전체 사용자 계정 및 포인트 현황")
+            st.dataframe(users_df, use_container_width=True)
+            st.markdown("### 📊 전체 사용자 에너지 사용 상세 기록")
+            st.dataframe(usage_df, use_container_width=True)
+
     else:
-        # 사진의 둥근 버튼 형태를 상단 탭으로 구현
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 기록", "🤖 코칭", "📸 인증", "🏆 랭킹"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 에너지 사용 분석", "🤖 AI 코칭", "📸 사진 인증 절약", "🏆 리더보드"])
 
         with tab1:
-            st.subheader("이번 달 사용량 입력")
+            st.subheader("이번 달 생활 에너지 사용량 입력")
             with st.form("usage_form"):
                 col1, col2 = st.columns(2)
                 elec_input = col1.number_input("전기 사용량 (kWh)", min_value=0.0, value=250.0, step=1.0)
                 gas_input = col2.number_input("가스 사용량 (m³)", min_value=0.0, value=20.0, step=1.0)
-                submit_btn = st.form_submit_button("저장 및 분석")
+                submit_btn = st.form_submit_button("기록 및 분석")
 
             if submit_btn:
                 co2_emission = (elec_input * 0.4781) + (gas_input * 2.176)
                 save_usage(user, elec_input, gas_input, co2_emission)
 
-                st.success("데이터가 기록되었습니다!")
+                st.success("데이터가 성공적으로 기록되었습니다!")
                 col_m1, col_m2, col_m3 = st.columns(3)
                 col_m1.metric("전기 사용", f"{elec_input} kWh")
                 col_m2.metric("가스 사용", f"{gas_input} m³")
                 col_m3.metric("탄소 배출량", f"{co2_emission:.2f} kg CO2e")
 
             st.divider()
-            st.subheader(f"📈 {user}님의 트렌드")
+            st.subheader(f"📈 {user}님의 누적 사용 에너지 트렌드")
             df = get_usage_data(user)
             if not df.empty and len(df) > 0:
-                fig = px.area(df, x='date', y='co2_kg', markers=True)
-                # 다크 모드 차트 적용
-                fig.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)', 
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color="white")
-                ) 
-                fig.update_xaxes(showgrid=False)
-                fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#333333')
+                fig = px.area(df, x='date', y='co2_kg', markers=True, title="일자별 탄소 배출량 변화")
+                # 차트 배경 투명화로 모던함 강조
+                fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)') 
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("아직 기록된 데이터가 없습니다.")
+                st.info("아직 기록된 데이터가 없습니다. 사용량을 입력해 주세요.")
 
         with tab2:
-            st.subheader("🤖 AI 에너지 코칭")
+            st.subheader("🤖 AI 에너지 코칭 & Q&A")
             with st.expander("📊 내 사용량 기반 자동 코칭 받기", expanded=False):
                 df = get_usage_data(user)
                 if not df.empty and len(df) > 0:
                     latest_data = df.iloc[-1]
-                    if st.button("조언 듣기"):
-                        with st.spinner("생성 중..."):
+                    if st.button("AI에게 조언 듣기"):
+                        with st.spinner("AI가 조언을 생성 중입니다..."):
                             advice = get_gemma_advice(latest_data['elec_kwh'], latest_data['gas_m3'],
                                                       latest_data['co2_kg'])
                             st.info(advice)
                 else:
-                    st.warning("데이터를 먼저 기록해주세요.")
+                    st.warning("먼저 '에너지 사용 분석' 탭에서 데이터를 기록해주세요.")
 
             st.divider()
+            st.markdown("### 💬 무엇이든 물어보세요!")
             if "chat_messages" not in st.session_state:
                 st.session_state.chat_messages = []
 
@@ -430,23 +436,23 @@ if 'username' in st.session_state:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            if prompt := st.chat_input("질문을 입력하세요..."):
+            if prompt := st.chat_input("예: 여름철 에어컨 전기세 줄이는 꿀팁 알려줘"):
                 with st.chat_message("user"):
                     st.markdown(prompt)
                 st.session_state.chat_messages.append({"role": "user", "content": prompt})
 
                 with st.chat_message("assistant"):
-                    with st.spinner("고민 중..."):
+                    with st.spinner("AI가 답변을 고민 중입니다..."):
                         response = ask_gemma_custom_question(prompt)
                         st.markdown(response)
                 st.session_state.chat_messages.append({"role": "assistant", "content": response})
 
         with tab3:
-            st.subheader("📸 실천 인증")
+            st.subheader("📸 실천 인증하고 에코 포인트 받기")
             uploaded_file = st.file_uploader("인증 사진 업로드", type=["png", "jpg", "jpeg"])
 
             if uploaded_file is not None:
-                st.image(uploaded_file, caption="업로드된 사진", use_container_width=True)
+                st.image(uploaded_file, caption="업로드된 인증 사진", width=400)
 
                 if st.button("AI 인증하기"):
                     result_json, error = analyze_image_with_gemini(uploaded_file)
@@ -455,7 +461,7 @@ if 'username' in st.session_state:
                         st.error(error)
                     elif result_json:
                         if str(result_json.get("action_found")).lower() == "true":
-                            description = result_json.get("description", "행동")
+                            description = result_json.get("description", "에너지 절약 행동")
                             raw_kwh = result_json.get("estimated_save_kwh", "0")
 
                             match = re.search(r'[\d\.]+', str(raw_kwh))
@@ -463,17 +469,18 @@ if 'username' in st.session_state:
 
                             gained_points = max(10, min(500, int(saved_kwh * 100)))
 
-                            st.success(f"🎉 **'{description}'** 확인 완료!")
+                            st.success(f"🎉 인증 성공! AI 분석 결과: **'{description}'** 실천이 확인되었습니다.")
                             col_r1, col_r2 = st.columns(2)
-                            col_r1.metric("절약량", f"{saved_kwh:.2f} kWh")
-                            col_r2.metric("포인트", f"{gained_points} P")
+                            col_r1.metric("추정 절약량", f"{saved_kwh:.2f} kWh")
+                            col_r2.metric("획득 포인트", f"{gained_points} P")
 
                             update_user_points(user, gained_points)
+                            st.balloons()
                         else:
-                            st.warning("행동을 인식하지 못했습니다.")
+                            st.warning("⚠️ AI가 사진에서 명확한 에너지 절약 행동을 인식하지 못했습니다.")
 
         with tab4:
-            st.subheader("🏆 리더보드")
+            st.subheader("🏆 봉사단 에코 리더보드")
             conn = get_connection()
             users_df = conn.read(worksheet="users", ttl=0).dropna(how="all")
 
@@ -491,6 +498,8 @@ if 'username' in st.session_state:
                     columns={'username': '닉네임', 'login_count': '접속 횟수', 'total_points': '누적 포인트'}
                 )
                 st.table(display_df)
+            else:
+                st.info("아직 가입한 사용자가 없습니다.")
 
 else:
-    st.info("👈 닉네임을 입력하고 로그인 해주세요.")
+    st.info("👈 왼쪽 사이드바에서 닉네임을 입력하고 로그인 해주세요.")
